@@ -60,7 +60,7 @@ export function CommandPanels({ feed, depth, zones, live, mode }: Props) {
   useEffect(() => {
     if (paused) return;
     const t = setTimeout(() => {
-      const [from, to, text] = CONVO[i % CONVO.length];
+      const [from, to, text] = CONVO[i % CONVO.length]!;
       const ts = now();
       setMsgs((m) => [...m, { t: ts, from, to, text }].slice(-60));
       const lat = 40 + Math.round(Math.random() * 120);
