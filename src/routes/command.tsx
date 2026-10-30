@@ -116,7 +116,12 @@ function Command() {
       if (cancelled || !mapEl.current || map.current) return;
       const lf = (mod.default ?? mod) as typeof Leaflet;
       L.current = lf;
-      const m = lf.map(mapEl.current, { zoomControl: false, attributionControl: true }).setView([12.922, 77.645], 14);
+      // Lock the view to Bangalore only: user cannot pan or zoom outside the city
+      const BOUND = lf.latLngBounds(lf.latLng(12.78, 77.42), lf.latLng(13.12, 77.84));
+      const m = lf.map(mapEl.current, {
+        zoomControl: false, attributionControl: true,
+        maxBounds: BOUND, maxBoundsViscosity: 1.0, minZoom: 11, maxZoom: 19,
+      }).setView([12.922, 77.645], 14);
       lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap", maxZoom: 19, className: "dark-tiles",
       }).addTo(m);
