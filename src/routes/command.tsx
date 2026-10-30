@@ -173,18 +173,41 @@ function Command() {
     if (z && map.current) map.current.flyTo([z.lat, z.lng], 15, { duration: 0.8 });
   }, [selected]);
 
-  // dispatch lines
+  // dispatch routes along real roads (OSRM, free & keyless)
+  const routeCache = useRef<Record<string, [number, number][]>>({});
+  const [routeTick, setRouteTick] = useState(0);
+  useEffect(() => {
+    dispatches.forEach((d) => {
+      const key = `${d.res.id}-${d.zone.id}`;
+      if (routeCache.current[key]) return;
+      routeCache.current[key] = [[d.res.lat, d.res.lng], [d.zone.lat, d.zone.lng]];
+      fetch(`https://router.project-osrm.org/route/v1/driving/${d.res.lng},${d.res.lat};${d.zone.lng},${d.zone.lat}?overview=full&geometries=geojson`)
+        .then((r) => r.json())
+        .then((j) => {
+          const coords: [number, number][] | undefined = j?.routes?.[0]?.geometry?.coordinates?.map((c: [number, number]) => [c[1], c[0]]);
+          if (coords?.length) { routeCache.current[key] = coords; setRouteTick((t) => t + 1); }
+        })
+        .catch(() => {});
+    });
+  }, [dispatches]);
+
   useEffect(() => {
     const lf = L.current, g = lines.current;
     if (!lf || !g) return;
     g.clearLayers();
-    const col = cssVar("--primary");
+    const col = cssVar("--primary"), ok = cssVar("--success");
     dispatches.forEach((d) => {
-      lf.polyline([[d.res.lat, d.res.lng], [d.zone.lat, d.zone.lng]], {
-        color: col, weight: 3, dashArray: d.status === "EN ROUTE" ? "6 8" : undefined, opacity: 0.9,
-      }).addTo(g);
+      const path = routeCache.current[`${d.res.id}-${d.zone.id}`] ?? [[d.res.lat, d.res.lng], [d.zone.lat, d.zone.lng]];
+      const onScene = d.status === "ON SCENE";
+      lf.polyline(path, { color: onScene ? ok : col, weight: 4, opacity: 0.85, lineCap: "round", lineJoin: "round" }).addTo(g);
+      // moving unit along the road
+      const total = 6 + Math.round(dist(d.res, d.zone) * 400);
+      const p = onScene ? 1 : Math.min(1, Math.max(0, 1 - d.eta / total));
+      const pt = path[Math.min(path.length - 1, Math.round(p * (path.length - 1)))]!;
+      lf.circleMarker(pt, { radius: 6, color: cssVar("--foreground"), weight: 2, fillColor: onScene ? ok : col, fillOpacity: 1 })
+        .bindTooltip(`${d.res.name} → ${d.zone.name}`).addTo(g);
     });
-  }, [dispatches]);
+  }, [dispatches, routeTick]);
 
   // simulation loop
   useEffect(() => {
