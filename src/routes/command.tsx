@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { CommandPanels } from "@/components/CommandPanels";
 
 export const Route = createFileRoute("/command")({
   head: () => ({
@@ -259,7 +260,8 @@ function Command() {
   const unit = mode === "gas" ? "% LEL" : "m";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex h-screen flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center justify-between border-b px-4 font-mono text-xs">
         <div className="flex items-center gap-4">
           <Link to="/" className="text-lg font-bold tracking-[0.25em] text-accent">NAMMAMAYOR<span className="text-muted-foreground">OS</span></Link>
@@ -412,6 +414,8 @@ function Command() {
           </div>
         </aside>
       </div>
+    </div>
+    <CommandPanels feed={feed} depth={depth} zones={ZONES} live={live} mode={mode} />
     </div>
   );
 }
