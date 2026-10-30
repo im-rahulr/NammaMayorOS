@@ -117,8 +117,8 @@ function Command() {
       const lf = (mod.default ?? mod) as typeof Leaflet;
       L.current = lf;
       const m = lf.map(mapEl.current, { zoomControl: false, attributionControl: true }).setView([12.922, 77.645], 14);
-      lf.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 19,
+      lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap", maxZoom: 19, className: "dark-tiles",
       }).addTo(m);
       lf.control.zoom({ position: "bottomright" }).addTo(m);
       ZONES.forEach((z) => {
@@ -148,7 +148,7 @@ function Command() {
       if (!c) return;
       const v = d[z.id];
       const col = v > 0.6 ? red : v > 0.3 ? amber : teal;
-      c.setRadius(150 + v * 900);
+      c.setRadius(120 + Math.min(v, 1.2) * 450);
       c.setStyle({ color: col, fillColor: col, fillOpacity: 0.15 + Math.min(v, 1) * 0.3 });
     });
   };
