@@ -88,8 +88,14 @@ function Command() {
 
   const [clock, setClock] = useState("");
   const [mode, setMode] = useState<Mode>("idle");
+  const [stage, setStage] = useState<1 | 2>(1);
+  const [radio, setRadio] = useState<"none" | "pending" | "handled">("none");
   const [tick, setTick] = useState(0);
   const [depth, setDepth] = useState<Record<string, number>>(() => Object.fromEntries(ZONES.map((z) => [z.id, 0.05 * z.sens])));
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
+  const radioRef = useRef(radio);
+  radioRef.current = radio;
   const [feed, setFeed] = useState<Feed[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [tab, setTab] = useState<"Overview" | "Reports" | "Resources" | "Triage">("Overview");
@@ -217,11 +223,25 @@ function Command() {
       const n = tick + 1;
       const line = SCRIPT[mode][n];
       if (line) push(line[0], line[1], line[2]);
+      // Gas leak: radio call goes out, escalation to Stage 2 if the operator doesn't respond
+      if (mode === "gas") {
+        if (n === 2) {
+          setRadio("pending");
+          push("RADIO", "MAYDAY — active gas leak, HSR Sector 2 overpressure risk. Response required NOW.", "warn");
+        }
+        if (radioRef.current === "pending" && n >= 10) {
+          radioRef.current = "handled";
+          setRadio("handled");
+          setStage(2);
+          push("RADIO", "NO RESPONSE on channel 14. Leak escalating — declaring STAGE 2.", "warn");
+          push("SYS", "STAGE 2: damage radius expanded 500 m → 1,000 m. Adjacent zones at risk.", "warn");
+        }
+      }
       const peak = mode === "storm" ? 20 : 16;
       setDepth((prev) => {
         const next: Record<string, number> = {};
         ZONES.forEach((z) => {
-          const focus = mode === "gas" ? (z.id === "HSR" ? 1.6 : z.id === "SARJAPUR" || z.id === "BELLANDUR" ? 0.5 : 0.1) : z.sens;
+          const focus = mode === "gas" ? (z.id === "HSR" ? (stage === 2 ? 2.4 : 1.6) : stage === 2 ? 0.4 : 0.1) : z.sens;
           const delta = n <= peak ? 0.045 * focus : -0.05 * focus;
           next[z.id] = Math.max(0.03, +((prev[z.id] ?? 0) + delta).toFixed(3));
         });
@@ -229,17 +249,18 @@ function Command() {
       });
       if (n === 8 || n === 11 || n === 14) {
         const kind: Kind = n === 8 ? "police" : n === 11 ? "shelter" : "hospital";
-        setDepth((cur) => {
-          const worst = [...ZONES].sort((a, b) => (cur[b.id] ?? 0) - (cur[a.id] ?? 0)).slice(0, 2);
-          setDispatches((ds) => [
-            ...ds,
-            ...worst.map((z) => {
-              const res = RES.filter((r) => r.kind === kind).sort((a, b) => dist(a, z) - dist(b, z))[0]!;
-              return { id: `${res.id}-${z.id}-${n}`, res, zone: z, status: "EN ROUTE" as const, eta: 6 + Math.round(dist(res, z) * 400) };
-            }),
-          ]);
-          return cur;
-        });
+        // In gas mode the incident is at one fixed site (HSR Sector 2) — dispatch units
+        // there only. For storm mode, target the two zones with the highest measured level.
+        const worst = mode === "gas"
+          ? [ZONES.find((z) => z.id === "HSR")!]
+          : [...ZONES].sort((a, b) => (depthRef.current[b.id] ?? 0) - (depthRef.current[a.id] ?? 0)).slice(0, 2);
+        setDispatches((ds) => [
+          ...ds.filter((e) => !worst.some((z) => e.id === `${RES.find((r) => r.kind === kind)!.id}-${z.id}-${n}`)),
+          ...worst.map((z) => {
+            const res = RES.filter((r) => r.kind === kind).sort((a, b) => dist(a, z) - dist(b, z))[0]!;
+            return { id: `${res.id}-${z.id}-${n}`, res, zone: z, status: "EN ROUTE" as const, eta: 6 + Math.round(dist(res, z) * 400) };
+          }),
+        ]);
       }
       setDispatches((ds) => ds.map((d) => (d.eta <= 1 ? { ...d, eta: 0, status: "ON SCENE" } : { ...d, eta: d.eta - 1 })));
       if (n >= end) {
@@ -251,25 +272,39 @@ function Command() {
     return () => clearTimeout(t);
   }, [mode, tick]);
 
-  // gas hazard ring
+  // gas hazard ring (Stage 1: 500 m · Stage 2: 1,000 m, red)
   useEffect(() => {
     const lf = L.current, m = map.current;
     if (!lf || !m) return;
-    if (mode === "gas" && !hazard.current) {
-      const col = cssVar("--primary");
-      hazard.current = lf.circle([12.9116, 77.6474], { radius: 500, color: col, weight: 2, dashArray: "4 6", fillOpacity: 0.08 }).addTo(m).bindTooltip("Gas leak cordon");
+    if (mode === "gas") {
+      const col = stage === 2 ? cssVar("--destructive") : cssVar("--primary");
+      if (!hazard.current) {
+        hazard.current = lf.circle([12.9116, 77.6474], { radius: 500, dashArray: "4 6", fillOpacity: 0.08 }).addTo(m).bindTooltip("Gas leak cordon");
+      }
+      hazard.current.setRadius(stage === 2 ? 1000 : 500);
+      hazard.current.setStyle({ color: col, fillColor: col, weight: 2, fillOpacity: stage === 2 ? 0.14 : 0.08 });
+      hazard.current.setTooltipContent(stage === 2 ? "Gas leak cordon — STAGE 2 · radius expanded" : "Gas leak cordon");
     }
     if (mode === "idle" && hazard.current) { hazard.current.remove(); hazard.current = null; }
-  }, [mode]);
+  }, [mode, stage]);
 
   const run = (m: Exclude<Mode, "idle">) => {
     const t0 = performance.now();
     setDispatches([]);
     setDepth(Object.fromEntries(ZONES.map((z) => [z.id, 0.05 * z.sens])));
     setTick(0);
+    setStage(1);
+    setRadio("none");
     setMode(m);
     push("SYS", m === "storm" ? "Scenario: Monsoon cloudburst — 34 steps" : "Scenario: Gas leak, HSR Sector 2 — 30 steps", "warn");
     setCompute(Math.round(performance.now() - t0 + 40 + Math.random() * 30));
+  };
+
+  const handleRadio = () => {
+    radioRef.current = "handled";
+    setRadio("handled");
+    push("RADIO", "COPY, channel 14. Fire-3 + EMS responding to HSR Sector 2.", "ok");
+    push("SYS", "Response acknowledged — cordon holding, Stage 2 averted.", "ok");
   };
 
   const sorted = useMemo(() => [...ZONES].sort((a, b) => (depth[b.id] ?? 0) - (depth[a.id] ?? 0)), [depth]);
@@ -289,7 +324,7 @@ function Command() {
         <div className="flex items-center gap-4">
           <Link to="/" className="text-lg font-bold tracking-[0.25em] text-accent">NAMMAMAYOR<span className="text-muted-foreground">OS</span></Link>
           <span className="hidden rounded-sm border border-accent/40 px-2 py-1 text-accent md:inline">Government · BBMP</span>
-          <span className="hidden text-muted-foreground md:inline">Bangalore · {live ? (mode === "storm" ? "Monsoon event" : "Gas leak") : "Standby"}</span>
+          <span className="hidden text-muted-foreground md:inline">Bangalore · {live ? (mode === "storm" ? "Monsoon event" : stage === 2 ? "Gas leak · STAGE 2" : "Gas leak") : "Standby"}</span>
         </div>
         <div className="flex items-center gap-2 tracking-[0.2em]">
           <span className={`h-2 w-2 rounded-full ${live ? "bg-destructive pulse-ring" : "bg-success"}`} />
@@ -319,7 +354,6 @@ function Command() {
             </div>
           </div>
 
-          <button onClick={() => run("storm")} disabled={live} className="rounded-sm border border-accent bg-accent/10 py-3 font-mono text-sm font-bold tracking-[0.2em] text-accent hover:bg-accent/20 disabled:opacity-40">SIMULATE STORM</button>
           <button onClick={() => run("gas")} disabled={live} className="rounded-sm bg-primary py-3 font-mono text-sm font-bold tracking-widest text-primary-foreground hover:opacity-90 disabled:opacity-40">🔥 GAS LEAK MODE</button>
           {live && <button onClick={() => { setMode("idle"); push("SYS", "Simulation aborted by operator", "warn"); }} className="rounded-sm border border-destructive py-2 font-mono text-xs text-destructive">■ ABORT</button>}
 
@@ -356,6 +390,17 @@ function Command() {
         {/* map */}
         <div className="relative min-w-0 flex-1">
           <div ref={mapEl} className="h-full w-full bg-background" />
+          {live && radio === "pending" && (
+            <div className="absolute bottom-6 left-4 z-[500] w-72 rounded-sm border border-destructive bg-card/95 p-3 shadow-xl">
+              <div className="flex items-center gap-2 font-mono text-[10px] tracking-widest">
+                <span className="h-2 w-2 rounded-full bg-destructive pulse-ring" />
+                <span className="text-destructive">INCOMING RADIO</span>
+                <span className="ml-auto text-muted-foreground">T+{tick}</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Gas leak, HSR Sector 2 — cordon at 500 m. Respond before it escalates.</p>
+              <button onClick={handleRadio} className="mt-2 w-full rounded-sm bg-primary py-2 font-mono text-xs font-bold tracking-widest text-primary-foreground hover:opacity-90">📡 RESPOND NOW</button>
+            </div>
+          )}
           <div className="pointer-events-none absolute right-4 top-4 z-[500] w-48 space-y-px overflow-hidden rounded-sm border bg-card/90 font-mono text-[10px] tracking-widest">
             {[["CROWD RISK", live || risk > 10 ? `${risk}%` : "—"], ["EVACUATION", evac ? `${evac}%` : "—"], ["RESPONSE", dispatches.length ? `${Math.round(dispatches.reduce((s, d) => s + d.eta, 0) / dispatches.length)}m` : "—"], ["BUSES", buses]].map(([l, v]) => (
               <div key={l as string} className="flex items-center justify-between border-b px-3 py-2.5 last:border-0">
