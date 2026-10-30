@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/")({
@@ -75,7 +75,7 @@ function Index() {
           NammaMayor deploys a coordinated team of specialized AI agents that detect, predict and respond to crowd crises in real time — turning fragmented sensor data into decisions, evacuation corridors and public broadcasts.
         </p>
         <div className="mt-10 flex gap-4">
-          <a href="#simulation" className="rounded-sm bg-primary px-6 py-3 font-mono text-sm font-semibold text-primary-foreground hover:opacity-90">RUN SIMULATION →</a>
+          <Link to="/command" className="rounded-sm bg-primary px-6 py-3 font-mono text-sm font-semibold text-primary-foreground hover:opacity-90">OPEN COMMAND CENTER →</Link>
           <a href="#agents" className="rounded-sm border px-6 py-3 font-mono text-sm hover:bg-secondary">MEET THE AGENTS</a>
         </div>
       </section>
