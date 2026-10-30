@@ -146,7 +146,7 @@ function Command() {
     ZONES.forEach((z) => {
       const c = circles.current[z.id];
       if (!c) return;
-      const v = d[z.id];
+      const v = d[z.id] ?? 0;
       const col = v > 0.6 ? red : v > 0.3 ? amber : teal;
       c.setRadius(120 + Math.min(v, 1.2) * 450);
       c.setStyle({ color: col, fillColor: col, fillOpacity: 0.15 + Math.min(v, 1) * 0.3 });
@@ -194,18 +194,18 @@ function Command() {
         ZONES.forEach((z) => {
           const focus = mode === "gas" ? (z.id === "HSR" ? 1.6 : z.id === "SARJAPUR" || z.id === "BELLANDUR" ? 0.5 : 0.1) : z.sens;
           const delta = n <= peak ? 0.045 * focus : -0.05 * focus;
-          next[z.id] = Math.max(0.03, +(prev[z.id] + delta).toFixed(3));
+          next[z.id] = Math.max(0.03, +((prev[z.id] ?? 0) + delta).toFixed(3));
         });
         return next;
       });
       if (n === 8 || n === 11 || n === 14) {
         const kind: Kind = n === 8 ? "police" : n === 11 ? "shelter" : "hospital";
         setDepth((cur) => {
-          const worst = [...ZONES].sort((a, b) => cur[b.id] - cur[a.id]).slice(0, 2);
+          const worst = [...ZONES].sort((a, b) => (cur[b.id] ?? 0) - (cur[a.id] ?? 0)).slice(0, 2);
           setDispatches((ds) => [
             ...ds,
             ...worst.map((z) => {
-              const res = RES.filter((r) => r.kind === kind).sort((a, b) => dist(a, z) - dist(b, z))[0];
+              const res = RES.filter((r) => r.kind === kind).sort((a, b) => dist(a, z) - dist(b, z))[0]!;
               return { id: `${res.id}-${z.id}-${n}`, res, zone: z, status: "EN ROUTE" as const, eta: 6 + Math.round(dist(res, z) * 400) };
             }),
           ]);
@@ -243,10 +243,10 @@ function Command() {
     setCompute(Math.round(performance.now() - t0 + 40 + Math.random() * 30));
   };
 
-  const sorted = useMemo(() => [...ZONES].sort((a, b) => depth[b.id] - depth[a.id]), [depth]);
-  const avg = ZONES.reduce((s, z) => s + depth[z.id], 0) / ZONES.length;
-  const critical = ZONES.filter((z) => depth[z.id] > 0.6).length;
-  const affected = ZONES.filter((z) => depth[z.id] > 0.3).length;
+  const sorted = useMemo(() => [...ZONES].sort((a, b) => (depth[b.id] ?? 0) - (depth[a.id] ?? 0)), [depth]);
+  const avg = ZONES.reduce((s, z) => s + (depth[z.id] ?? 0), 0) / ZONES.length;
+  const critical = ZONES.filter((z) => (depth[z.id] ?? 0) > 0.6).length;
+  const affected = ZONES.filter((z) => (depth[z.id] ?? 0) > 0.3).length;
   const live = mode !== "idle";
   const risk = Math.min(99, Math.round(avg * 110));
   const evac = Math.min(100, dispatches.filter((d) => d.status === "ON SCENE").length * 17);
@@ -356,7 +356,7 @@ function Command() {
                 </div>
                 <div className="mt-5 font-mono text-[10px] tracking-widest text-muted-foreground">ZONE SEVERITY</div>
                 {sorted.map((z) => {
-                  const v = depth[z.id];
+                  const v = (depth[z.id] ?? 0);
                   return (
                     <button key={z.id} onClick={() => setSelected(z.id)} className={`flex w-full items-center gap-2 border-b py-2.5 text-left ${selected === z.id ? "bg-secondary" : ""}`}>
                       <span className="w-28 truncate">{z.name}</span>
@@ -395,7 +395,7 @@ function Command() {
               );
             })}
             {tab === "Triage" && sorted.map((z, i) => {
-              const v = depth[z.id];
+              const v = (depth[z.id] ?? 0);
               const p = v > 0.6 ? "P1 · CRITICAL" : v > 0.3 ? "P2 · HIGH" : "P3 · MONITOR";
               return (
                 <div key={z.id} className="mb-2 rounded-sm border bg-background/60 p-3">
